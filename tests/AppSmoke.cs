@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Drawing;
 using System.Windows.Forms;
@@ -10,6 +10,7 @@ class AppSmoke {
     static void Run(string[] args){
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         Program.Edition=args.Length>1?args[1]:"lite";Program.DataDir=Path.Combine(Path.GetFullPath(args[0]),"smoke-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(Program.DataDir);
+        TestMigration(Path.Combine(Program.DataDir,"migration-test"));
         Program.Wake=new EventWaitHandle(false,EventResetMode.AutoReset,"BouncyIconsSmoke-"+Guid.NewGuid());
         LauncherContext c=new LauncherContext();Application.DoEvents();
         string gif=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","folder.gif");
@@ -17,7 +18,7 @@ class AppSmoke {
         if(c.Pets.Count!=2)throw new Exception("multiple entries");
         foreach(PetWindow w in c.Pets.Values){w.Config.Size=128;w.ApplySize();w.Save();if(w.Width!=140)throw new Exception("resize");w.LoadGif();w.Rescue();TestDrag(w);TestDoubleClick(w);}
         foreach(Form f in Application.OpenForms){if(f is ManagerWindow){
-            if(!f.Text.Contains(Program.EditionName))throw new Exception("edition name missing");
+            if(!f.Text.Contains("管理器"))throw new Exception("edition name missing");
             using(Bitmap bmp=new Bitmap(f.Width,f.Height)){f.DrawToBitmap(bmp,new Rectangle(0,0,bmp.Width,bmp.Height));bmp.Save(Path.Combine(args[0],"manager-preview.png"));}
         }}
         Entry added=c.Entries[1];string realTarget=c.Pets[added.Id].Config.Target;c.Remove(added);
@@ -29,7 +30,29 @@ class AppSmoke {
             if(!manual.Controls[0].Text.Contains("双击")||!manual.Controls[0].Text.Contains("简易 / 标准 / 进阶"))throw new Exception("manual content");
             using(Bitmap bmp=new Bitmap(manual.Width,manual.Height)){manual.DrawToBitmap(bmp,new Rectangle(0,0,bmp.Width,bmp.Height));bmp.Save(Path.Combine(args[0],"manual-preview.png"));}
         }
+        foreach(string mode in new[]{"pro","lite","standard","lite"}){
+            PetWindow pet=c.Pets[c.Entries[0].Id];string target=pet.Config.Target,image=pet.Config.Gif;int size=pet.Config.Size;
+            c.SetMode(mode);Application.DoEvents();Program.LoadMode();
+            if(Program.Edition!=mode||pet.Config.Target!=target||pet.Config.Gif!=image||pet.Config.Size!=size||c.Pets.Count!=1)throw new Exception("mode switch lost settings");
+            if(pet.Moving!=(mode!="lite")||pet.Pro!=(mode=="pro"))throw new Exception("mode behavior");
+        }
         c.Shutdown();Program.Wake.Dispose();Console.WriteLine("PASS: edition names; embedded manual; actual double-click launch; single-click/drag do not launch; two targets; GIF; resize; drag persistence; range; safe removal; shutdown");
+    }
+    static void TestMigration(string root){
+        var json=new System.Web.Script.Serialization.JavaScriptSerializer();string id=new string('a',32);
+        foreach(string mode in new[]{"lite","pro"}){
+            string old=Path.Combine(root,mode),profile=Path.Combine(old,id);Directory.CreateDirectory(profile);
+            string gif=Path.Combine(profile,"custom.gif");File.Copy(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","folder.gif"),gif);
+            File.WriteAllText(Path.Combine(old,"entries.json"),json.Serialize(new[]{new Entry{Id=id,Name=mode}}));
+            File.WriteAllText(Path.Combine(profile,"settings.json"),json.Serialize(new Preferences{Gif=gif,Target="test-target",Size=144}));
+        }
+        string shared=SharedData.Prepare(root);
+        var entries=json.Deserialize<Entry[]>(File.ReadAllText(Path.Combine(shared,"entries.json")));
+        if(entries.Length!=2||entries[0].Id==entries[1].Id)throw new Exception("migration collision");
+        foreach(Entry e in entries){var cfg=json.Deserialize<Preferences>(File.ReadAllText(Path.Combine(shared,e.Id,"settings.json")));
+            if(cfg.Target!="test-target"||cfg.Size!=144||!File.Exists(cfg.Gif)||!cfg.Gif.StartsWith(shared))throw new Exception("migration content");}
+        string before=File.ReadAllText(Path.Combine(shared,"entries.json"));SharedData.Prepare(root);
+        if(before!=File.ReadAllText(Path.Combine(shared,"entries.json"))||!Directory.Exists(Path.Combine(root,"lite")))throw new Exception("migration repeat or original deleted");
     }
     static void TestDrag(PetWindow w){
         Rectangle screen=Screen.PrimaryScreen.WorkingArea;

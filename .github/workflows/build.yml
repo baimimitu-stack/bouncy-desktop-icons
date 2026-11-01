@@ -5,13 +5,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build all editions and test the reusable brain
+      - name: Build unified app and test the reusable brain
         shell: powershell
         run: .\build.ps1 -Test
       - uses: actions/upload-artifact@v4
         with:
           name: BouncyIcons-Windows
           path: |
-            dist/BouncyIcons-*.exe
+            dist/BouncyIcons.exe
             dist/assets/
             dist/使用说明.txt

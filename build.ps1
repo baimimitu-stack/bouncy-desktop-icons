@@ -10,11 +10,11 @@ if($Test){
   & "$root\dist\CoreTests.exe"
   if($LASTEXITCODE -ne 0){throw '算法测试失败'}
 }
-foreach($edition in @('Lite','Standard','Pro')){
-  & $csc /nologo /codepage:65001 /target:winexe /optimize+ "/out:$root\dist\BouncyIcons-$edition.exe" "/resource:$root\使用说明.txt,BouncyIcons.Manual.txt" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll "$root\src\PetBrain.cs" "$root\src\PetApp.cs" "$root\src\LauncherManager.cs"
-  if($LASTEXITCODE -ne 0){throw "$edition 编译失败"}
+& {
+  & $csc /nologo /codepage:65001 /target:winexe /optimize+ "/out:$root\dist\BouncyIcons.exe" "/resource:$root\使用说明.txt,BouncyIcons.Manual.txt" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll "$root\src\PetBrain.cs" "$root\src\PetApp.cs" "$root\src\LauncherManager.cs" "$root\src\SharedData.cs"
+  if($LASTEXITCODE -ne 0){throw "程序编译失败"}
 }
 Copy-Item -LiteralPath "$root\assets\folder.gif" -Destination "$root\dist\assets\folder.gif"
-Write-Output '构建完成：dist 中包含三个版本及共享 assets 文件夹。'
+Write-Output '构建完成：dist 中包含一个程序及 assets 文件夹。'
 
 Copy-Item -LiteralPath "$root\使用说明.txt" -Destination "$root\dist\使用说明.txt"

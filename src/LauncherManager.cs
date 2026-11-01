@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Drawing;
 using System.Windows.Forms;
@@ -39,6 +39,13 @@ namespace BouncyIcons {
             wakeTimer.Interval=500;wakeTimer.Tick+=(s,e)=>{if(Program.Wake.WaitOne(0))ShowManager();};wakeTimer.Start();
             if(first)ShowManager();
         }
+        public void SetMode(string mode){
+            if(mode!="lite"&&mode!="standard"&&mode!="pro")throw new ArgumentException("mode");
+            SharedData.AtomicWrite(Path.Combine(Program.DataDir,"mode.txt"),mode);
+            if(Program.Edition==mode)return;Program.Edition=mode;
+            foreach(PetWindow pet in Pets.Values)pet.ApplyMode();
+            tray.Text="蹦蹦图标 · "+Program.EditionName;if(manager!=null)manager.RefreshMode();
+        }
         public void Save(){try{File.WriteAllText(index,new JavaScriptSerializer().Serialize(Entries));}catch(Exception e){Program.Log(e);}}
         public void ShowManager(){if(manager!=null&&!manager.IsDisposed){manager.Show();manager.Activate();return;}manager=new ManagerWindow(this);manager.Show();}
         public void Add(string target,string picture,string gif){
@@ -52,9 +59,11 @@ namespace BouncyIcons {
     sealed class ManagerWindow:Form {
         readonly LauncherContext ctx;
         readonly ListView list=new ListView();
-        public ManagerWindow(LauncherContext c){ctx=c;Text="蹦蹦图标 · "+Program.EditionName+" · 应用管理";ClientSize=new Size(700,460);StartPosition=FormStartPosition.CenterScreen;Font=new Font("Microsoft YaHei",10);BackColor=Color.FromArgb(248,244,236);AllowDrop=true;
-            Controls.Add(new Label{Text="蹦蹦图标 · "+Program.EditionName,Font=new Font(Font.FontFamily,17,FontStyle.Bold),Location=new Point(22,20),AutoSize=true});
-            Controls.Add(new Label{Text=Program.EditionSummary+"。每个应用可绑定自己的 GIF。",Location=new Point(22,65),AutoSize=true});
+        readonly ComboBox modes=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Location=new Point(310,25),Width=180};
+        readonly Label summary=new Label{Location=new Point(22,65),AutoSize=true};
+        public ManagerWindow(LauncherContext c){ctx=c;Text="蹦蹦图标管理器";ClientSize=new Size(700,460);StartPosition=FormStartPosition.CenterScreen;Font=new Font("Microsoft YaHei",10);BackColor=Color.FromArgb(248,244,236);AllowDrop=true;
+            Controls.Add(new Label{Text="蹦蹦图标管理器",Font=new Font(Font.FontFamily,17,FontStyle.Bold),Location=new Point(22,20),AutoSize=true});
+            Controls.Add(summary);modes.Items.AddRange(new object[]{"简易","标准","进阶"});Controls.Add(modes);RefreshMode();modes.SelectedIndexChanged+=(s,e)=>ctx.SetMode(new[]{"lite","standard","pro"}[modes.SelectedIndex]);
             AddButton("使用说明书",536,20,()=>Program.ShowManual());
             list.Location=new Point(22,105);list.Size=new Size(656,265);list.View=View.Details;list.FullRowSelect=true;list.MultiSelect=false;list.Columns.Add("挂件",145);list.Columns.Add("双击打开",390);list.Columns.Add("尺寸",80);Controls.Add(list);
             AddButton("添加应用挂件",22,390,()=>AddEntry(null));AddButton("设置 / 换 GIF",180,390,()=>{Entry e=Selected();if(e!=null)ctx.Pets[e.Id].OpenSettings();});
@@ -66,6 +75,7 @@ namespace BouncyIcons {
             DragDrop+=(s,e)=>{string[] paths=(string[])e.Data.GetData(DataFormats.FileDrop);if(paths!=null&&paths.Length>0)AddEntry(paths[0]);};
             FormClosing+=(s,e)=>{e.Cancel=true;Hide();};RefreshList();
         }
+        public void RefreshMode(){modes.SelectedIndex=Program.Edition=="lite"?0:Program.Edition=="standard"?1:2;summary.Text=Program.EditionSummary+"。所有模式共用应用绑定和 GIF。";}
         void AddButton(string name,int x,int y,Action f){Button b=new Button{Text=name,Location=new Point(x,y),Size=new Size(142,36)};b.Click+=(s,e)=>f();Controls.Add(b);}
         Entry Selected(){return list.SelectedItems.Count==0?null:(Entry)list.SelectedItems[0].Tag;}
         public void RefreshList(){string id=Selected()==null?null:Selected().Id;list.Items.Clear();foreach(Entry e in ctx.Entries){PetWindow w=ctx.Pets[e.Id];ListViewItem item=new ListViewItem(e.Name);item.SubItems.Add(String.IsNullOrEmpty(w.Config.Target)?"未绑定 · 双击打开设置":w.Config.Target);item.SubItems.Add(w.Config.Size.ToString());item.Tag=e;list.Items.Add(item);if(id==e.Id)item.Selected=true;}}
