@@ -30,7 +30,7 @@ namespace BouncyIcons {
                 if(!created){Wake.Set();Wake.Dispose();return;}
                 Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
                 Application.ThreadException+=(s,e)=>Log(e.Exception);
-                try{Application.Run(new LauncherContext());}catch(Exception e){Log(e);MessageBox.Show(e.Message,"启动失败");}
+                try{LauncherContext context=new LauncherContext();if(Array.IndexOf(args,"--manage")>=0)context.ShowManager();Application.Run(context);}catch(Exception e){Log(e);MessageBox.Show(e.Message,"启动失败");}
                 Wake.Dispose();
             }
         }
