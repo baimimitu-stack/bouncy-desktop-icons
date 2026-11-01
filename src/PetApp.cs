@@ -85,7 +85,7 @@ namespace BouncyIcons {
         }
         internal void SyncReaction(double dt){
             if(!Pro&&(reactionWindow==null||reactionWindow.IsDisposed)){if(ActiveReactionId!=null)StopReaction();return;}
-            if(Social.Revision!=reactionRevision){reactionRevision=Social.Revision;var clip=Reactions.Pick(Social.ReactionKind);if(clip==null)clip=Reactions.Pick(Social.Mood.ToString());if(clip!=null)PlayReaction(clip);else if(ActiveReactionId!=null)StopReaction();}
+            if(Social.Revision!=reactionRevision){reactionRevision=Social.Revision;Social.OverrideSpeech(Reactions.MoodText(Social.ReactionKind));var clip=Reactions.Pick(Social.ReactionKind);if(clip==null)clip=Reactions.Pick(Social.Mood.ToString());if(clip!=null)PlayReaction(clip);else if(ActiveReactionId!=null)StopReaction();}
             if(ActiveReactionId!=null){reactionLeft-=Math.Max(0,Math.Min(.1,dt));if(reactionLeft<=0)StopReaction();}
         }
         public void StopReaction(){ActiveReactionId=null;reactionLeft=0;LoadGif();}
@@ -100,7 +100,7 @@ namespace BouncyIcons {
         }
         internal void ProcessPendingClick(double now){
             if(clickDue<0||now<clickDue||dragging)return;
-            clickDue=-1;if(Pro&&Config.Interactions)Social.Click();
+            clickDue=-1;if(Pro&&Config.Interactions){var mood=Reactions.ChooseClick();if(mood==null)Social.Click();else Social.Click(mood.Id,String.IsNullOrWhiteSpace(mood.Text)?mood.Name+"～":mood.Text);}
         }
         internal void ClearInteraction(){clickDue=-1;Social.Clear();reactionRevision=Social.Revision;if(ActiveReactionId!=null)StopReaction();if(speech!=null)speech.Hide();}
 
@@ -209,7 +209,7 @@ namespace BouncyIcons {
             if(gif!=null){double scale=Math.Min((double)box.Width/gif.Width,(double)box.Height/gif.Height);int w=(int)(gif.Width*scale),h=(int)(gif.Height*scale);
                 e.Graphics.InterpolationMode=InterpolationMode.HighQualityBicubic;e.Graphics.DrawImage(gif,new Rectangle(box.X+(box.Width-w)/2,box.Y+(box.Height-h)/2,w,h));
             }else{using(Brush b=new SolidBrush(Color.Goldenrod))e.Graphics.FillRectangle(b,box);}
-            string label=Pro?Social.MoodName+" · "+StateLabel():Entry.Name;
+            string label=Pro?(Reactions.MoodName(Social.ReactionKind)??Social.MoodName)+" · "+StateLabel():Entry.Name;
             TextRenderer.DrawText(e.Graphics,label,Font,new Rectangle(0,Config.Size+10,Width,24),Color.FromArgb(72,53,40),Color.FromArgb(255,245,220),TextFormatFlags.HorizontalCenter|TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis);
         }
         string StateLabel(){switch(brain.State){case PetState.SeekFood:return "找吃的…";case PetState.Eat:return "嚼嚼嚼";case PetState.Sleep:return "z z z";case PetState.Wander:return "散步中";default:return "歇一会儿";}}

@@ -56,6 +56,16 @@ class AppSmoke {
         pet.Reactions.Remove(first);if(File.Exists(pet.Reactions.FileFor(first))||!File.Exists(source))throw new Exception("remove reaction touched source");
         File.Delete(pet.Reactions.FileFor(second));if(pet.Reactions.Pick("Happy")!=null)throw new Exception("missing GIF fallback");
         pet.Reactions.Remove(second);c.SetMode("pro");
+        var mood=pet.Reactions.SaveMood(null,"委屈","需要抱抱",true);var custom=pet.Reactions.Add(source,mood.Id);
+        var loaded=new ReactionLibrary(Path.Combine(Program.DataDir,pet.Entry.Id));if(loaded.MoodName(mood.Id)!="委屈"||loaded.Pick(mood.Id)==null)throw new Exception("custom mood persistence");
+        bool customChosen=false;for(int i=0;i<100;i++)if(pet.Reactions.ChooseClick()!=null)customChosen=true;if(!customChosen)throw new Exception("custom click pool");
+        pet.Social.Click(mood.Id,mood.Text);pet.SyncReaction(0);if(pet.ActiveReactionId!=custom.Id||pet.Social.Speech!="需要抱抱")throw new Exception("custom mood trigger");
+        pet.Reactions.SaveMood(mood,"小委屈","抱一下",false);for(int i=0;i<20;i++)if(pet.Reactions.ChooseClick()!=null)throw new Exception("disabled custom mood");
+        if(pet.Reactions.Pick(mood.Id)==null)throw new Exception("rename lost GIF");
+        bool duplicate=false;try{pet.Reactions.SaveMood(null,"小委屈","",true);}catch(ArgumentException){duplicate=true;}if(!duplicate)throw new Exception("duplicate mood name");
+        pet.ClearInteraction();pet.Reactions.DeleteMood(mood);if(custom.Kind!="Calm"||!File.Exists(pet.Reactions.FileFor(custom)))throw new Exception("delete mood lost asset");
+        string legacy=Path.Combine(Program.DataDir,"legacy-reactions");Directory.CreateDirectory(Path.Combine(legacy,"reactions"));File.WriteAllText(Path.Combine(legacy,"reactions","library.json"),new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new[]{new ReactionClip{Id=new string('b',32),Name="old",Kind="Happy"}}));
+        var old=new ReactionLibrary(legacy);old.SaveMood(null,"困困","晚安",true);var migrated=new ReactionLibrary(legacy);if(migrated.Clips.Count!=1||migrated.Moods.Count!=8)throw new Exception("legacy library migration");
         string damaged=Path.Combine(Program.DataDir,"damaged");Directory.CreateDirectory(Path.Combine(damaged,"reactions"));string index=Path.Combine(damaged,"reactions","library.json");File.WriteAllText(index,"broken");var invalid=new ReactionLibrary(damaged);if(invalid.LoadError==null||invalid.Pick("Happy")!=null)throw new Exception("damaged library isolation");
     }
     static void TestInteractions(LauncherContext c,string output){

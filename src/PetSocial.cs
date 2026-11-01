@@ -11,7 +11,7 @@ namespace BouncyIcons {
         public string ReactionKind="Calm";
         public int Revision {get;private set;}
         public void OverrideSpeech(string text){if(!String.IsNullOrWhiteSpace(text)){Speech=text;SpeechLeft=3.5;}}
-        public void React(string kind,string text){PetMood mood;Enum.TryParse<PetMood>(kind,out mood);if(kind=="Argument")mood=PetMood.Grumpy;if(kind=="Greeting")mood=PetMood.Happy;Say(text,mood);ReactionKind=kind;}
+        public void React(string kind,string text){PetMood mood;if(!Enum.TryParse<PetMood>(kind,out mood))mood=PetMood.Curious;if(kind=="Argument")mood=PetMood.Grumpy;if(kind=="Greeting")mood=PetMood.Happy;Say(text,mood);ReactionKind=kind;}
         public double SpeechLeft {get;private set;}
         public int ClickCount {get;private set;}
         public bool Ready {get{return cooldown<=0&&SpeechLeft<=0;}}
@@ -23,9 +23,11 @@ namespace BouncyIcons {
             if(moodLeft<=0&&Mood!=PetMood.Calm){Mood=PetMood.Calm;ReactionKind="Calm";Revision++;}if(SpeechLeft<=0)Speech="";
         }
         void Say(string text,PetMood mood){Speech=text;SpeechLeft=3.5;Mood=mood;moodLeft=18;ReactionKind=mood.ToString();Revision++;}
-        public void Click(){
+        public void Click(){Click(null,null);}
+        public void Click(string kind,string text){
             ClickCount++;clickHeat+=1;cooldown=6;
             if(clickHeat>=4){Say("戳太多啦，歇一下嘛！",PetMood.Grumpy);return;}
+            if(kind!=null){Say(text,PetMood.Curious);ReactionKind=kind;return;}
             switch(random.Next(5)){
                 case 0:Say("嘿嘿，摸摸收到！",PetMood.Happy);break;
                 case 1:Say("诶？是在叫我吗？",PetMood.Curious);break;
@@ -46,6 +48,6 @@ namespace BouncyIcons {
             ReactionKind=other.ReactionKind=(Mood==PetMood.Grumpy?"Argument":"Greeting");
             cooldown=other.cooldown=22;return true;
         }
-        public void Clear(){Speech="";SpeechLeft=0;clickHeat=0;cooldown=0;Mood=PetMood.Calm;moodLeft=0;}
+        public void Clear(){ReactionKind="Calm";Speech="";SpeechLeft=0;clickHeat=0;cooldown=0;Mood=PetMood.Calm;moodLeft=0;}
     }
 }
