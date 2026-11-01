@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace BouncyIcons {
     public enum PetMood { Calm, Happy, Shy, Curious, Grumpy }
@@ -8,6 +8,10 @@ namespace BouncyIcons {
         double moodLeft,clickHeat,cooldown;
         public PetMood Mood=PetMood.Calm;
         public string Speech="";
+        public string ReactionKind="Calm";
+        public int Revision {get;private set;}
+        public void OverrideSpeech(string text){if(!String.IsNullOrWhiteSpace(text)){Speech=text;SpeechLeft=3.5;}}
+        public void React(string kind,string text){PetMood mood;Enum.TryParse<PetMood>(kind,out mood);if(kind=="Argument")mood=PetMood.Grumpy;if(kind=="Greeting")mood=PetMood.Happy;Say(text,mood);ReactionKind=kind;}
         public double SpeechLeft {get;private set;}
         public int ClickCount {get;private set;}
         public bool Ready {get{return cooldown<=0&&SpeechLeft<=0;}}
@@ -16,9 +20,9 @@ namespace BouncyIcons {
         public void Step(double dt){
             dt=Math.Max(0,Math.Min(.1,dt));clickHeat=Math.Max(0,clickHeat-dt*.32);
             cooldown=Math.Max(0,cooldown-dt);SpeechLeft=Math.Max(0,SpeechLeft-dt);moodLeft-=dt;
-            if(moodLeft<=0)Mood=PetMood.Calm;if(SpeechLeft<=0)Speech="";
+            if(moodLeft<=0&&Mood!=PetMood.Calm){Mood=PetMood.Calm;ReactionKind="Calm";Revision++;}if(SpeechLeft<=0)Speech="";
         }
-        void Say(string text,PetMood mood){Speech=text;SpeechLeft=3.5;Mood=mood;moodLeft=18;}
+        void Say(string text,PetMood mood){Speech=text;SpeechLeft=3.5;Mood=mood;moodLeft=18;ReactionKind=mood.ToString();Revision++;}
         public void Click(){
             ClickCount++;clickHeat+=1;cooldown=6;
             if(clickHeat>=4){Say("戳太多啦，歇一下嘛！",PetMood.Grumpy);return;}
@@ -39,6 +43,7 @@ namespace BouncyIcons {
             }else{
                 Say("你今天看起来很精神！",PetMood.Curious);other.Say("嘿嘿，你也是呀。",PetMood.Shy);
             }
+            ReactionKind=other.ReactionKind=(Mood==PetMood.Grumpy?"Argument":"Greeting");
             cooldown=other.cooldown=22;return true;
         }
         public void Clear(){Speech="";SpeechLeft=0;clickHeat=0;cooldown=0;Mood=PetMood.Calm;moodLeft=0;}

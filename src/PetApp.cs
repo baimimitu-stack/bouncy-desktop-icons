@@ -68,6 +68,28 @@ namespace BouncyIcons {
         internal readonly PetSocial Social=new PetSocial(Guid.NewGuid().GetHashCode());
         SpeechWindow speech;
         bool speechLower;
+        internal ReactionLibrary Reactions;
+        ReactionWindow reactionWindow;
+        ChatWindow chatWindow;
+        double reactionLeft;
+        int reactionRevision;
+        internal string ActiveReactionId;
+        public void OpenReactions(){if(reactionWindow!=null&&!reactionWindow.IsDisposed){reactionWindow.Activate();return;}reactionWindow=new ReactionWindow(this);reactionWindow.Show();}
+        public void OpenChat(){if(chatWindow!=null&&!chatWindow.IsDisposed){chatWindow.Activate();return;}chatWindow=new ChatWindow(this);chatWindow.Show();}
+        public void ShowChatReply(string text){if(Pro)Social.React("Curious",text.Length>70?text.Substring(0,70)+"…":text);}
+        internal void PreviewReaction(ReactionClip clip){Social.React(clip.Kind,String.IsNullOrWhiteSpace(clip.Text)?"预览："+clip.Name:clip.Text);reactionRevision=Social.Revision;PlayReaction(clip);}
+        void PlayReaction(ReactionClip clip){
+            if(clip==null)return;
+            if(LoadVisual(Reactions.FileFor(clip))){ActiveReactionId=clip.Id;reactionLeft=clip.Seconds;Social.OverrideSpeech(clip.Text);}
+            else StopReaction();
+        }
+        internal void SyncReaction(double dt){
+            if(!Pro&&(reactionWindow==null||reactionWindow.IsDisposed)){if(ActiveReactionId!=null)StopReaction();return;}
+            if(Social.Revision!=reactionRevision){reactionRevision=Social.Revision;var clip=Reactions.Pick(Social.ReactionKind);if(clip==null)clip=Reactions.Pick(Social.Mood.ToString());if(clip!=null)PlayReaction(clip);else if(ActiveReactionId!=null)StopReaction();}
+            if(ActiveReactionId!=null){reactionLeft-=Math.Max(0,Math.Min(.1,dt));if(reactionLeft<=0)StopReaction();}
+        }
+        public void StopReaction(){ActiveReactionId=null;reactionLeft=0;LoadGif();}
+
         internal bool CanMeet {get{return Pro&&Config.Social&&Visible&&!dragging&&!menuOpen&&settings==null&&clickDue<0&&brain.State!=PetState.Sleep&&brain.State!=PetState.Eat&&Social.Ready;}}
         internal bool Meet(PetWindow other){
             if(!CanMeet||!other.CanMeet)return false;
@@ -80,7 +102,7 @@ namespace BouncyIcons {
             if(clickDue<0||now<clickDue||dragging)return;
             clickDue=-1;if(Pro&&Config.Interactions)Social.Click();
         }
-        internal void ClearInteraction(){clickDue=-1;Social.Clear();if(speech!=null)speech.Hide();}
+        internal void ClearInteraction(){clickDue=-1;Social.Clear();reactionRevision=Social.Revision;if(ActiveReactionId!=null)StopReaction();if(speech!=null)speech.Hide();}
 
         readonly List<Food> foods=new List<Food>();
         readonly Dictionary<string,FoodWindow> foodWindows=new Dictionary<string,FoodWindow>();
@@ -91,7 +113,7 @@ namespace BouncyIcons {
         readonly string profileDir;
         public PetWindow(Entry entry){
             Entry=entry;profileDir=Path.Combine(Program.DataDir,entry.Id);Directory.CreateDirectory(profileDir);
-            configPath=Path.Combine(profileDir,"settings.json");
+            configPath=Path.Combine(profileDir,"settings.json");Reactions=new ReactionLibrary(profileDir);
             try{Config=new JavaScriptSerializer().Deserialize<Preferences>(File.ReadAllText(configPath))??new Preferences();}catch{Config=new Preferences();}
             Config.Size=Math.Max(32,Math.Min(256,Config.Size));Config.Speed=Math.Max(10,Math.Min(120,Config.Speed));
             FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;BackColor=Color.Magenta;TransparencyKey=Color.Magenta;TopMost=Config.TopMost;
@@ -115,7 +137,7 @@ namespace BouncyIcons {
             };
             SystemEvents.DisplaySettingsChanged+=DisplayChanged;
             FormClosing+=(s,e)=>{if(!quitting){e.Cancel=true;Rescue();}};
-            FormClosed+=(s,e)=>{timer.Stop();timer.Dispose();if(speech!=null)speech.Dispose();SystemEvents.DisplaySettingsChanged-=DisplayChanged;Save();ClearFood();DisposeImage();tray.Visible=false;tray.Dispose();};
+            FormClosed+=(s,e)=>{timer.Stop();timer.Dispose();if(reactionWindow!=null)reactionWindow.Close();if(chatWindow!=null)chatWindow.Close();if(speech!=null)speech.Dispose();SystemEvents.DisplaySettingsChanged-=DisplayChanged;Save();ClearFood();DisposeImage();tray.Visible=false;tray.Dispose();};
         }
         static Bounds ToBounds(Rectangle a){return new Bounds(a.X,a.Y,a.Width,a.Height);}
         void DisplayChanged(object s,EventArgs e){if(!IsDisposed)BeginInvoke((Action)(()=>{ApplyArea();brain.Reset(ToBounds(area),brain.Position);ApplySize();ClearFood();}));}
@@ -152,12 +174,17 @@ namespace BouncyIcons {
         public void ImportImage(string file){ try{ string target=Path.Combine(profileDir,"picture.png");using(Image im=Image.FromFile(file)){if(im.Width>4096||im.Height>4096)throw new Exception("图片尺寸过大");im.Save(target,ImageFormat.Png);}Config.Gif=target;LoadGif();Save();}catch(Exception e){MessageBox.Show(e.Message);} }
         void DisposeImage(){if(gif!=null){gif.Dispose();gif=null;}if(imageStream!=null){imageStream.Dispose();imageStream=null;}}
         public void LoadGif(){
-            DisposeImage();string file=File.Exists(Config.Gif)?Config.Gif:Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","folder.gif");
+            ActiveReactionId=null;reactionLeft=0;
+            string fallback=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","folder.gif");
+            string file=File.Exists(Config.Gif)?Config.Gif:fallback;if(!LoadVisual(file)&&file!=fallback)LoadVisual(fallback);
+        }
+        bool LoadVisual(string file){
+            DisposeImage();
             try{imageStream=new MemoryStream(File.ReadAllBytes(file));gif=Image.FromStream(imageStream);frameCount=1;frameIndex=0;frameElapsed=0;
                 foreach(Guid dim in gif.FrameDimensionsList)if(dim==FrameDimension.Time.Guid)frameCount=gif.GetFrameCount(FrameDimension.Time);
                 frameDelays=new int[frameCount];for(int i=0;i<frameCount;i++)frameDelays[i]=100;
-                try{byte[] delays=gif.GetPropertyItem(0x5100).Value;for(int i=0;i<frameCount&&i*4+4<=delays.Length;i++)frameDelays[i]=Math.Max(50,BitConverter.ToInt32(delays,i*4)*10);}catch(ArgumentException){}}catch(Exception e){Program.Log(e);}
-            Invalidate();
+                try{byte[] delays=gif.GetPropertyItem(0x5100).Value;for(int i=0;i<frameCount&&i*4+4<=delays.Length;i++)frameDelays[i]=Math.Max(50,BitConverter.ToInt32(delays,i*4)*10);}catch(ArgumentException){}}catch(Exception e){Program.Log(e);DisposeImage();return false;}
+            Invalidate();return true;
         }
 
         public void ImportGif(string file){
@@ -189,6 +216,7 @@ namespace BouncyIcons {
         void Tick(object s,EventArgs e){
             double now=clock.Elapsed.TotalSeconds,dt=now-last;last=now;elapsed=now;
             if(Pro){Social.Step(dt);ProcessPendingClick(now);}
+            SyncReaction(dt);
             if(Pro&&Social.SpeechLeft>0&&!dragging){if(speech==null)speech=new SpeechWindow();speech.Follow(this,Social.Speech,speechLower);}
             else if(speech!=null)speech.Hide();
             bool changed=false;frameElapsed+=Math.Min(.1,dt)*1000;if(gif!=null&&frameCount>1&&frameElapsed>=frameDelays[frameIndex]){frameElapsed=0;frameIndex=(frameIndex+1)%frameCount;gif.SelectActiveFrame(FrameDimension.Time,frameIndex);changed=true;}
@@ -207,6 +235,7 @@ namespace BouncyIcons {
             m.Items.Add("选择双击后打开的文件夹…",null,(s,e)=>{using(FolderBrowserDialog d=new FolderBrowserDialog()){if(d.ShowDialog()==DialogResult.OK){Config.Target=d.SelectedPath;Save();}}});
             m.Items.Add("选择双击后打开的文件或快捷方式…",null,(s,e)=>{using(OpenFileDialog d=new OpenFileDialog()){d.Title="选择打开目标";d.DereferenceLinks=false;if(d.ShowDialog()==DialogResult.OK){Config.Target=d.FileName;Save();}}});
             if(Pro){m.Items.Add("投喂草",null,(s,e)=>Feed("草",false));m.Items.Add("投喂文件夹（仅动画）…",null,(s,e)=>{using(FolderBrowserDialog d=new FolderBrowserDialog()){if(d.ShowDialog()==DialogResult.OK)Feed(Path.GetFileName(d.SelectedPath),true);}});}
+            m.Items.Add("反应素材库（多 GIF）…",null,(s,e)=>OpenReactions());m.Items.Add("和挂件聊天 / API 设置…",null,(s,e)=>OpenChat());
             m.Items.Add("找回 / 重置位置",null,(s,e)=>Rescue());m.Items.Add("使用说明书",null,(s,e)=>Program.ShowManual());m.Items.Add("退出所有挂件",null,(s,e)=>LauncherContext.Current.Shutdown());
             m.Opening+=(s,e)=>menuOpen=true;m.Closed+=(s,e)=>menuOpen=false;ContextMenuStrip=m;
         }
@@ -296,7 +325,7 @@ namespace BouncyIcons {
             roam.Enabled=pet.Moving;speed.Enabled=pet.Moving;range.Enabled=pet.Moving;
             roam.Text=pet.Pro?"随机游走、觅食和休息":"在范围内随机游走";
         }
-        public SettingsWindow(PetWindow p){pet=p;Icon=Program.AppIcon;Text=p.Text+" · 设置";ClientSize=new Size(430,555);FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;Font=new Font("Microsoft YaHei",10);BackColor=Color.FromArgb(248,244,236);
+        public SettingsWindow(PetWindow p){pet=p;Icon=Program.AppIcon;Text=p.Text+" · 设置";ClientSize=new Size(430,610);FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;Font=new Font("Microsoft YaHei",10);BackColor=Color.FromArgb(248,244,236);
             Controls.Add(new Label{Text="全局模式",AutoSize=true,Location=new Point(22,25)});
             modes=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Location=new Point(130,22),Width=250};modes.Items.AddRange(new object[]{"简易 · 原地 GIF","标准 · 范围游走","进阶 · 心情与伙伴互动"});Controls.Add(modes);
             Button gif=ButtonAt("选择 GIF…",22,70,()=>{using(OpenFileDialog d=new OpenFileDialog()){d.Filter="GIF 动图|*.gif";if(d.ShowDialog()==DialogResult.OK)pet.ImportGif(d.FileName);}});
@@ -311,9 +340,10 @@ namespace BouncyIcons {
             interactions=CheckAt("点击心情反应",22,377,pet.Config.Interactions);social=CheckAt("与其他挂件互动",220,377,pet.Config.Social);
             interactions.CheckedChanged+=(s,e)=>{pet.Config.Interactions=interactions.Checked;pet.ClearInteraction();pet.Save();};
             social.CheckedChanged+=(s,e)=>{pet.Config.Social=social.Checked;pet.ClearInteraction();pet.Save();};
-            hint=new Label{Location=new Point(22,425),Size=new Size(390,60)};Controls.Add(hint);
+            ButtonAt("反应素材库",22,425,()=>pet.OpenReactions());ButtonAt("API 聊天",220,425,()=>pet.OpenChat());
+            hint=new Label{Location=new Point(22,477),Size=new Size(390,60)};Controls.Add(hint);
             RefreshMode();modes.SelectedIndexChanged+=(s,e)=>LauncherContext.Current.SetMode(new[]{"lite","standard","pro"}[modes.SelectedIndex]);
-            ButtonAt("使用说明书",22,505,()=>Program.ShowManual());ButtonAt("完成",285,505,()=>Close());
+            ButtonAt("使用说明书",22,560,()=>Program.ShowManual());ButtonAt("完成",285,560,()=>Close());
         }
         Button ButtonAt(string text,int x,int y,Action action){Button b=new Button{Text=text,Location=new Point(x,y),Size=new Size(135,32)};b.Click+=(s,e)=>action();Controls.Add(b);return b;}
         CheckBox CheckAt(string text,int x,int y,bool value){CheckBox c=new CheckBox{Text=text,Checked=value,AutoSize=true,Location=new Point(x,y)};Controls.Add(c);return c;}
