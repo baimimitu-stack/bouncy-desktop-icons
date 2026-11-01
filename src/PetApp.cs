@@ -51,6 +51,8 @@ namespace BouncyIcons {
         Rectangle area;
         bool dragging,menuOpen,quitting;
         Point dragOffset,dragStart;
+        Point dragWindowStart;
+        Rectangle dragAreaStart;
         bool dragMoved;
         readonly List<Food> foods=new List<Food>();
         readonly Dictionary<string,FoodWindow> foodWindows=new Dictionary<string,FoodWindow>();
@@ -73,7 +75,9 @@ namespace BouncyIcons {
             tray=new NotifyIcon{Icon=SystemIcons.Application,Text=Text,Visible=false,ContextMenuStrip=ContextMenuStrip};
             tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Left)Rescue();};
             timer.Interval=Moving?50:100;timer.Tick+=Tick;timer.Start();
+            Cursor=Cursors.Hand;
             MouseDown+=Down;MouseMove+=MoveMouse;MouseUp+=Up;
+            MouseCaptureChanged+=(s,e)=>{if(dragging&&!Capture)EndDrag(false);};
             DragEnter+=(s,e)=>{if(e.Data.GetDataPresent(DataFormats.FileDrop))e.Effect=DragDropEffects.Copy;};
             DragDrop+=(s,e)=>{string[] paths=(string[])e.Data.GetData(DataFormats.FileDrop);if(paths==null||paths.Length==0)return;
                 if(Path.GetExtension(paths[0]).Equals(".gif",StringComparison.OrdinalIgnoreCase))ImportGif(paths[0]);
@@ -87,6 +91,7 @@ namespace BouncyIcons {
         void DisplayChanged(object s,EventArgs e){if(!IsDisposed)BeginInvoke((Action)(()=>{ApplyArea();brain.Reset(ToBounds(area),brain.Position);ApplySize();ClearFood();}));}
         void ApplyArea(){
             Rectangle wa=Screen.PrimaryScreen.WorkingArea;
+            if(!Moving){area=wa;return;}
             int w=Config.AreaW>0?Config.AreaW:Math.Min(640,wa.Width),h=Config.AreaH>0?Config.AreaH:Math.Min(420,wa.Height);
             w=Math.Min(wa.Width,Math.Max(Config.Size+36,w));h=Math.Min(wa.Height,Math.Max(Config.Size+36,h));
             int x=Config.AreaW>0?Config.AreaX:wa.Right-w-8,y=Config.AreaH>0?Config.AreaY:wa.Bottom-h-8;
@@ -141,7 +146,7 @@ namespace BouncyIcons {
 
             bool near=new Rectangle(Left-28,Top-28,Width+56,Height+56).Contains(Cursor.Position);
             bool paused=dragging||menuOpen||settings!=null||near;
-            if(Moving){brain.Step(dt,foods,paused||!Config.Roaming,Pro);Location=new Point((int)Math.Round(brain.Position.X),(int)Math.Round(brain.Position.Y));
+            if(Moving&&!dragging){brain.Step(dt,foods,paused||!Config.Roaming,Pro);Location=new Point((int)Math.Round(brain.Position.X),(int)Math.Round(brain.Position.Y));
                 if(brain.ConsumedFoodId!=null)RemoveFood(brain.ConsumedFoodId);
                 if(Pro&&!paused&&Config.Roaming){grassIn-=Math.Min(.1,dt);if(grassIn<=0){grassIn=18+random.NextDouble()*12;if(foods.Count<3)Feed("草",false);}}
             }
@@ -159,11 +164,37 @@ namespace BouncyIcons {
         public void Rescue(){Config.AreaW=0;Config.AreaH=0;ApplyArea();brain.Reset(ToBounds(area),new Vec(area.Right-Width-12,area.Bottom-Height-12));ApplySize();TopMost=true;Config.TopMost=true;Show();ClearFood();Save();}
         public void SelectArea(){using(RangePicker p=new RangePicker()){if(p.ShowDialog()==DialogResult.OK){Rectangle r=p.Selected;Config.AreaX=r.X;Config.AreaY=r.Y;Config.AreaW=r.Width;Config.AreaH=r.Height;ApplyArea();brain.Reset(ToBounds(area),new Vec(area.X,area.Y));ApplySize();ClearFood();Save();}}}
         public void Quit(){quitting=true;if(settings!=null)settings.Close();Close();}
-        void Down(object s,MouseEventArgs e){if(e.Button!=MouseButtons.Left)return;dragging=true;dragMoved=false;dragOffset=e.Location;dragStart=Cursor.Position;Capture=true;}
-        void MoveMouse(object s,MouseEventArgs e){if(!dragging)return;Point c=Cursor.Position;if(Math.Abs(c.X-dragStart.X)+Math.Abs(c.Y-dragStart.Y)>5)dragMoved=true;
-            Rectangle wa=Screen.FromPoint(c).WorkingArea;Vec p=new Bounds(wa.X,wa.Y,wa.Width,wa.Height).Clamp(new Vec(c.X-dragOffset.X,c.Y-dragOffset.Y),Math.Max(Width,Height));brain.Position=p;Location=new Point((int)p.X,(int)p.Y);
+        // Coordinate inputs keep gesture logic testable without moving the system pointer.
+        internal void BeginDrag(Point pointer,Point offset){
+            dragging=true;dragMoved=false;dragOffset=offset;dragStart=pointer;
+            dragWindowStart=Location;dragAreaStart=area;Capture=true;
         }
-        void Up(object s,MouseEventArgs e){if(!dragging)return;dragging=false;Capture=false;if(dragMoved){if(Moving){Config.AreaX=Left-250;Config.AreaY=Top-170;Config.AreaW=640;Config.AreaH=420;ApplyArea();brain.Reset(ToBounds(area),brain.Position);}Save();return;}
+        internal void UpdateDrag(Point pointer){
+            if(!dragging)return;
+            Size threshold=SystemInformation.DragSize;
+            if(!dragMoved&&Math.Abs(pointer.X-dragStart.X)<=threshold.Width/2&&Math.Abs(pointer.Y-dragStart.Y)<=threshold.Height/2)return;
+            dragMoved=true;Cursor=Cursors.SizeAll;
+            Rectangle wa=Screen.PrimaryScreen.WorkingArea;
+            Vec p=ToBounds(wa).Clamp(new Vec(pointer.X-dragOffset.X,pointer.Y-dragOffset.Y),Math.Max(Width,Height));
+            brain.Position=p;Location=new Point((int)p.X,(int)p.Y);
+        }
+        internal bool EndDrag(bool allowClick){
+            if(!dragging)return false;
+            dragging=false;Capture=false;Cursor=Cursors.Hand;
+            if(!dragMoved)return allowClick;
+            if(Moving){
+                Config.AreaX=dragAreaStart.X+Left-dragWindowStart.X;
+                Config.AreaY=dragAreaStart.Y+Top-dragWindowStart.Y;
+                Config.AreaW=dragAreaStart.Width;Config.AreaH=dragAreaStart.Height;
+                ApplyArea();ClearFood();
+            }
+            brain.Reset(ToBounds(area),brain.Position);
+            Location=new Point((int)brain.Position.X,(int)brain.Position.Y);
+            Save();return false;
+        }
+        void Down(object s,MouseEventArgs e){if(e.Button==MouseButtons.Left)BeginDrag(Cursor.Position,e.Location);}
+        void MoveMouse(object s,MouseEventArgs e){UpdateDrag(Cursor.Position);}
+        void Up(object s,MouseEventArgs e){if(e.Button!=MouseButtons.Left||!EndDrag(true))return;
             if(String.IsNullOrWhiteSpace(Config.Target))OpenSettings();else try{Process.Start(new ProcessStartInfo(Config.Target){UseShellExecute=true});}catch(Exception ex){MessageBox.Show(ex.Message,"打开失败");}
         }
         void Feed(string label,bool folder){
