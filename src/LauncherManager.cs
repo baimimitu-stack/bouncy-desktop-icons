@@ -32,8 +32,9 @@ namespace BouncyIcons {
             Save();
             ContextMenuStrip menu=new ContextMenuStrip();menu.Items.Add("管理所有应用挂件…",null,(s,e)=>ShowManager());
             menu.Items.Add("找回全部挂件",null,(s,e)=>{foreach(PetWindow w in Pets.Values)w.Rescue();});
+            menu.Items.Add("使用说明书",null,(s,e)=>Program.ShowManual());
             menu.Items.Add("退出所有挂件",null,(s,e)=>Shutdown());
-            tray=new NotifyIcon{Icon=SystemIcons.Application,Text="蹦蹦图标 · 应用挂件管理器",ContextMenuStrip=menu,Visible=true};
+            tray=new NotifyIcon{Icon=SystemIcons.Application,Text="蹦蹦图标 · "+Program.EditionName,ContextMenuStrip=menu,Visible=true};
             tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Left)ShowManager();};
             wakeTimer.Interval=500;wakeTimer.Tick+=(s,e)=>{if(Program.Wake.WaitOne(0))ShowManager();};wakeTimer.Start();
             if(first)ShowManager();
@@ -51,10 +52,11 @@ namespace BouncyIcons {
     sealed class ManagerWindow:Form {
         readonly LauncherContext ctx;
         readonly ListView list=new ListView();
-        public ManagerWindow(LauncherContext c){ctx=c;Text="蹦蹦图标 · 所有应用";ClientSize=new Size(700,460);StartPosition=FormStartPosition.CenterScreen;Font=new Font("Microsoft YaHei",10);BackColor=Color.FromArgb(248,244,236);AllowDrop=true;
-            Controls.Add(new Label{Text="把常用 app 变成会动的桌面入口",Font=new Font(Font.FontFamily,17,FontStyle.Bold),Location=new Point(22,20),AutoSize=true});
-            Controls.Add(new Label{Text="拖入快捷方式、程序或图片，再配一张 GIF。关闭此面板后，挂件继续运行。",Location=new Point(22,65),AutoSize=true});
-            list.Location=new Point(22,105);list.Size=new Size(656,265);list.View=View.Details;list.FullRowSelect=true;list.MultiSelect=false;list.Columns.Add("挂件",145);list.Columns.Add("点击打开",390);list.Columns.Add("尺寸",80);Controls.Add(list);
+        public ManagerWindow(LauncherContext c){ctx=c;Text="蹦蹦图标 · "+Program.EditionName+" · 应用管理";ClientSize=new Size(700,460);StartPosition=FormStartPosition.CenterScreen;Font=new Font("Microsoft YaHei",10);BackColor=Color.FromArgb(248,244,236);AllowDrop=true;
+            Controls.Add(new Label{Text="蹦蹦图标 · "+Program.EditionName,Font=new Font(Font.FontFamily,17,FontStyle.Bold),Location=new Point(22,20),AutoSize=true});
+            Controls.Add(new Label{Text=Program.EditionSummary+"。每个应用可绑定自己的 GIF。",Location=new Point(22,65),AutoSize=true});
+            AddButton("使用说明书",536,20,()=>Program.ShowManual());
+            list.Location=new Point(22,105);list.Size=new Size(656,265);list.View=View.Details;list.FullRowSelect=true;list.MultiSelect=false;list.Columns.Add("挂件",145);list.Columns.Add("双击打开",390);list.Columns.Add("尺寸",80);Controls.Add(list);
             AddButton("添加应用挂件",22,390,()=>AddEntry(null));AddButton("设置 / 换 GIF",180,390,()=>{Entry e=Selected();if(e!=null)ctx.Pets[e.Id].OpenSettings();});
             AddButton("找回",338,390,()=>{Entry e=Selected();if(e!=null)ctx.Pets[e.Id].Rescue();});
             AddButton("移除挂件",496,390,()=>{Entry e=Selected();if(e!=null&&MessageBox.Show("只移除这个挂件，不删除对应应用或文件。","移除挂件",MessageBoxButtons.OKCancel)==DialogResult.OK)ctx.Remove(e);});
@@ -66,8 +68,19 @@ namespace BouncyIcons {
         }
         void AddButton(string name,int x,int y,Action f){Button b=new Button{Text=name,Location=new Point(x,y),Size=new Size(142,36)};b.Click+=(s,e)=>f();Controls.Add(b);}
         Entry Selected(){return list.SelectedItems.Count==0?null:(Entry)list.SelectedItems[0].Tag;}
-        public void RefreshList(){string id=Selected()==null?null:Selected().Id;list.Items.Clear();foreach(Entry e in ctx.Entries){PetWindow w=ctx.Pets[e.Id];ListViewItem item=new ListViewItem(e.Name);item.SubItems.Add(String.IsNullOrEmpty(w.Config.Target)?"未绑定 · 点击打开设置":w.Config.Target);item.SubItems.Add(w.Config.Size.ToString());item.Tag=e;list.Items.Add(item);if(id==e.Id)item.Selected=true;}}
+        public void RefreshList(){string id=Selected()==null?null:Selected().Id;list.Items.Clear();foreach(Entry e in ctx.Entries){PetWindow w=ctx.Pets[e.Id];ListViewItem item=new ListViewItem(e.Name);item.SubItems.Add(String.IsNullOrEmpty(w.Config.Target)?"未绑定 · 双击打开设置":w.Config.Target);item.SubItems.Add(w.Config.Size.ToString());item.Tag=e;list.Items.Add(item);if(id==e.Id)item.Selected=true;}}
         void AddEntry(string input){using(AddEntryWindow d=new AddEntryWindow(input)){if(d.ShowDialog(this)==DialogResult.OK)ctx.Add(d.Target,d.Picture,d.Gif);}}
+    }
+    sealed class ManualWindow:Form {
+        public ManualWindow(){
+            Text="蹦蹦图标 · 使用说明书";ClientSize=new Size(680,620);MinimumSize=new Size(460,360);StartPosition=FormStartPosition.CenterScreen;
+            TextBox text=new TextBox{Dock=DockStyle.Fill,Multiline=true,ScrollBars=ScrollBars.Vertical,WordWrap=true,ReadOnly=true,BackColor=Color.FromArgb(255,253,248),BorderStyle=BorderStyle.None,Font=new Font("Microsoft YaHei",11)};
+            using(Stream stream=typeof(ManualWindow).Assembly.GetManifestResourceStream("BouncyIcons.Manual.txt")){
+                if(stream==null)throw new InvalidOperationException("使用说明书资源缺失");
+                using(StreamReader reader=new StreamReader(stream,System.Text.Encoding.UTF8))text.Text=reader.ReadToEnd().Replace("\r\n","\n").Replace("\n",Environment.NewLine);
+            }
+            text.SelectionStart=0;Padding=new Padding(22);Controls.Add(text);
+        }
     }
     sealed class AddEntryWindow:Form {
         public string Target="",Picture="",Gif="";

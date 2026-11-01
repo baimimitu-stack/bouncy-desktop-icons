@@ -2,8 +2,10 @@
 $root=$PSScriptRoot
 $csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 & "$root\build.ps1" -Test
-& $csc /nologo /codepage:65001 /target:exe /main:AppSmoke "/out:$root\dist\AppSmoke.exe" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll "$root\src\PetBrain.cs" "$root\src\PetApp.cs" "$root\src\LauncherManager.cs" "$root\tests\AppSmoke.cs"
+& $csc /nologo /codepage:65001 /target:exe /main:AppSmoke "/out:$root\dist\AppSmoke.exe" "/resource:$root\使用说明.txt,BouncyIcons.Manual.txt" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll "$root\src\PetBrain.cs" "$root\src\PetApp.cs" "$root\src\LauncherManager.cs" "$root\tests\AppSmoke.cs"
 if($LASTEXITCODE -ne 0){throw '集成测试编译失败'}
+& $csc /nologo /target:winexe "/out:$root\dist\LaunchProbe.exe" "$root\tests\LaunchProbe.cs"
+if($LASTEXITCODE -ne 0){throw '启动验证工具编译失败'}
 foreach($edition in @('lite','standard','pro')){
   & "$root\dist\AppSmoke.exe" "$root\dist" $edition
   if($LASTEXITCODE -ne 0){throw "$edition 原生界面集成测试失败"}

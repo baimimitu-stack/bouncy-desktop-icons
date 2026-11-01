@@ -20,6 +20,10 @@ namespace BouncyIcons {
     static class Program {
         public static string Edition,DataDir;
         public static EventWaitHandle Wake;
+        public static string EditionName { get { return Edition=="lite"?"简易版":(Edition=="standard"?"标准版":"进阶版"); } }
+        public static string EditionSummary { get { return Edition=="lite"?"原地播放 GIF，可选弹动":(Edition=="standard"?"在框定范围内游走，可调大小和速度":"游走、觅食、吃草与休息"); } }
+        static ManualWindow manual;
+        public static void ShowManual(){if(manual!=null&&!manual.IsDisposed){manual.Show();manual.Activate();return;}manual=new ManualWindow();manual.Show();}
         [STAThread] static void Main(string[] args) {
             Edition=Path.GetFileNameWithoutExtension(Application.ExecutablePath).ToLowerInvariant().Contains("lite")?"lite":(Path.GetFileNameWithoutExtension(Application.ExecutablePath).ToLowerInvariant().Contains("standard")?"standard":"pro");
             DataDir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"BouncyIcons",Edition);
@@ -54,6 +58,7 @@ namespace BouncyIcons {
         Point dragWindowStart;
         Rectangle dragAreaStart;
         bool dragMoved;
+        bool doubleClickArmed;
         readonly List<Food> foods=new List<Food>();
         readonly Dictionary<string,FoodWindow> foodWindows=new Dictionary<string,FoodWindow>();
         readonly Random random=new Random();
@@ -67,7 +72,7 @@ namespace BouncyIcons {
             try{Config=new JavaScriptSerializer().Deserialize<Preferences>(File.ReadAllText(configPath))??new Preferences();}catch{Config=new Preferences();}
             Config.Size=Math.Max(32,Math.Min(256,Config.Size));Config.Speed=Math.Max(10,Math.Min(120,Config.Speed));
             FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;BackColor=Color.Magenta;TransparencyKey=Color.Magenta;TopMost=Config.TopMost;
-            DoubleBuffered=true;Text=Pro?"蹦蹦图标 · 专业版":(Moving?"蹦蹦图标 · 中等版":"蹦蹦图标 · 低配版");StartPosition=FormStartPosition.Manual;AllowDrop=true;
+            DoubleBuffered=true;Text="蹦蹦图标 · "+Program.EditionName;StartPosition=FormStartPosition.Manual;AllowDrop=true;
             ApplyArea();
             Vec start=new Vec(Config.X==int.MinValue?area.Right-Config.Size:Config.X,Config.Y==int.MinValue?area.Bottom-Config.Size-24:Config.Y);
             brain=new PetBrain(Environment.TickCount,ToBounds(area),start);ApplySize();
@@ -76,7 +81,9 @@ namespace BouncyIcons {
             tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Left)Rescue();};
             timer.Interval=Moving?50:100;timer.Tick+=Tick;timer.Start();
             Cursor=Cursors.Hand;
+            SetStyle(ControlStyles.StandardClick|ControlStyles.StandardDoubleClick,true);
             MouseDown+=Down;MouseMove+=MoveMouse;MouseUp+=Up;
+            MouseDoubleClick+=(s,e)=>{if(e.Button==MouseButtons.Left&&AcceptDoubleClick())OpenBoundTarget();};
             MouseCaptureChanged+=(s,e)=>{if(dragging&&!Capture)EndDrag(false);};
             DragEnter+=(s,e)=>{if(e.Data.GetDataPresent(DataFormats.FileDrop))e.Effect=DragDropEffects.Copy;};
             DragDrop+=(s,e)=>{string[] paths=(string[])e.Data.GetData(DataFormats.FileDrop);if(paths==null||paths.Length==0)return;
@@ -154,10 +161,10 @@ namespace BouncyIcons {
         }
         void BuildMenu(){
             ContextMenuStrip m=new ContextMenuStrip();m.Items.Add("管理所有应用挂件…",null,(s,e)=>LauncherContext.Current.ShowManager());m.Items.Add("设置 / 换 GIF / 大小",null,(s,e)=>OpenSettings());
-            m.Items.Add("选择点击后打开的文件夹…",null,(s,e)=>{using(FolderBrowserDialog d=new FolderBrowserDialog()){if(d.ShowDialog()==DialogResult.OK){Config.Target=d.SelectedPath;Save();}}});
-            m.Items.Add("选择点击后打开的文件或快捷方式…",null,(s,e)=>{using(OpenFileDialog d=new OpenFileDialog()){d.Title="选择打开目标";d.DereferenceLinks=false;if(d.ShowDialog()==DialogResult.OK){Config.Target=d.FileName;Save();}}});
+            m.Items.Add("选择双击后打开的文件夹…",null,(s,e)=>{using(FolderBrowserDialog d=new FolderBrowserDialog()){if(d.ShowDialog()==DialogResult.OK){Config.Target=d.SelectedPath;Save();}}});
+            m.Items.Add("选择双击后打开的文件或快捷方式…",null,(s,e)=>{using(OpenFileDialog d=new OpenFileDialog()){d.Title="选择打开目标";d.DereferenceLinks=false;if(d.ShowDialog()==DialogResult.OK){Config.Target=d.FileName;Save();}}});
             if(Pro){m.Items.Add("投喂草",null,(s,e)=>Feed("草",false));m.Items.Add("投喂文件夹（仅动画）…",null,(s,e)=>{using(FolderBrowserDialog d=new FolderBrowserDialog()){if(d.ShowDialog()==DialogResult.OK)Feed(Path.GetFileName(d.SelectedPath),true);}});}
-            m.Items.Add("找回 / 重置位置",null,(s,e)=>Rescue());m.Items.Add("退出所有挂件",null,(s,e)=>LauncherContext.Current.Shutdown());
+            m.Items.Add("找回 / 重置位置",null,(s,e)=>Rescue());m.Items.Add("使用说明书",null,(s,e)=>Program.ShowManual());m.Items.Add("退出所有挂件",null,(s,e)=>LauncherContext.Current.Shutdown());
             m.Opening+=(s,e)=>menuOpen=true;m.Closed+=(s,e)=>menuOpen=false;ContextMenuStrip=m;
         }
         public void OpenSettings(){if(settings!=null){settings.Activate();return;}settings=new SettingsWindow(this);settings.FormClosed+=(s,e)=>{settings=null;Save();};settings.Show();}
@@ -181,7 +188,8 @@ namespace BouncyIcons {
         internal bool EndDrag(bool allowClick){
             if(!dragging)return false;
             dragging=false;Capture=false;Cursor=Cursors.Hand;
-            if(!dragMoved)return allowClick;
+            if(!dragMoved){if(!allowClick)doubleClickArmed=false;return allowClick;}
+            doubleClickArmed=false;
             if(Moving){
                 Config.AreaX=dragAreaStart.X+Left-dragWindowStart.X;
                 Config.AreaY=dragAreaStart.Y+Top-dragWindowStart.Y;
@@ -194,7 +202,12 @@ namespace BouncyIcons {
         }
         void Down(object s,MouseEventArgs e){if(e.Button==MouseButtons.Left)BeginDrag(Cursor.Position,e.Location);}
         void MoveMouse(object s,MouseEventArgs e){UpdateDrag(Cursor.Position);}
-        void Up(object s,MouseEventArgs e){if(e.Button!=MouseButtons.Left||!EndDrag(true))return;
+        void Up(object s,MouseEventArgs e){if(e.Button==MouseButtons.Left&&dragging)doubleClickArmed=EndDrag(true);}
+        internal bool AcceptDoubleClick(){
+            if(!doubleClickArmed||dragMoved)return false;
+            EndDrag(false);doubleClickArmed=false;return true;
+        }
+        void OpenBoundTarget(){
             if(String.IsNullOrWhiteSpace(Config.Target))OpenSettings();else try{Process.Start(new ProcessStartInfo(Config.Target){UseShellExecute=true});}catch(Exception ex){MessageBox.Show(ex.Message,"打开失败");}
         }
         void Feed(string label,bool folder){
@@ -228,7 +241,7 @@ namespace BouncyIcons {
     sealed class SettingsWindow:Form {
         readonly PetWindow pet;
         public SettingsWindow(PetWindow p){pet=p;Text=p.Text+" · 设置";ClientSize=new Size(430,490);FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;Font=new Font("Microsoft YaHei",10);BackColor=Color.FromArgb(248,244,236);
-            Label title=new Label{Text=p.Pro?"专业版 · 游走与投喂":(p.Moving?"中等版 · 随机游走":"低配版 · 原地 GIF"),Font=new Font(Font.FontFamily,16,FontStyle.Bold),AutoSize=true,Location=new Point(22,20)};Controls.Add(title);
+            Label title=new Label{Text=Program.EditionName+(p.Pro?" · 游走与投喂":(p.Moving?" · 随机游走":" · 原地 GIF")),Font=new Font(Font.FontFamily,16,FontStyle.Bold),AutoSize=true,Location=new Point(22,20)};Controls.Add(title);
             Button gif=ButtonAt("选择 GIF…",22,70,()=>{using(OpenFileDialog d=new OpenFileDialog()){d.Filter="GIF 动图|*.gif";if(d.ShowDialog()==DialogResult.OK)pet.ImportGif(d.FileName);}});
             ButtonAt("恢复默认",172,70,()=>{pet.Config.Gif="";pet.LoadGif();pet.Save();});
             Controls.Add(new Label{Text="大小",Location=new Point(22,125),AutoSize=true});NumericUpDown size=new NumericUpDown{Minimum=32,Maximum=256,Value=pet.Config.Size,Increment=8,Location=new Point(130,121),Width=100};size.ValueChanged+=(s,e)=>{pet.Config.Size=(int)size.Value;pet.ApplySize();pet.Save();};Controls.Add(size);
@@ -239,8 +252,8 @@ namespace BouncyIcons {
                 Controls.Add(new Label{Text="速度",Location=new Point(22,290),AutoSize=true});NumericUpDown speed=new NumericUpDown{Minimum=10,Maximum=120,Value=pet.Config.Speed,Location=new Point(130,286),Width=100};speed.ValueChanged+=(s,e)=>{pet.Config.Speed=(int)speed.Value;pet.ApplySize();pet.Save();};Controls.Add(speed);
                 ButtonAt("框选活动范围",22,330,()=>{Hide();pet.SelectArea();Show();});ButtonAt("找回挂件",172,330,()=>pet.Rescue());
             }
-            Controls.Add(new Label{Text=p.Pro?"拖入文件夹可投喂动画副本，不改动真实文件。\n拖动挂件可换位置，右键可设置点击打开目标。":"不打开主界面也能动，但仍需一个轻量进程。\n不想弹动可关掉；GIF 本身仍会播放。",Location=new Point(22,390),Size=new Size(390,60)});
-            ButtonAt("完成",285,450,()=>Close());
+            Controls.Add(new Label{Text=p.Pro?"拖入文件夹可投喂动画副本，不改动真实文件。\n拖动挂件可换位置，右键可设置双击打开目标。":"不打开主界面也能动，但仍需一个轻量进程。\n不想弹动可关掉；GIF 本身仍会播放。",Location=new Point(22,390),Size=new Size(390,60)});
+            ButtonAt("使用说明书",22,450,()=>Program.ShowManual());ButtonAt("完成",285,450,()=>Close());
         }
         Button ButtonAt(string text,int x,int y,Action action){Button b=new Button{Text=text,Location=new Point(x,y),Size=new Size(135,32)};b.Click+=(s,e)=>action();Controls.Add(b);return b;}
         CheckBox CheckAt(string text,int x,int y,bool value){CheckBox c=new CheckBox{Text=text,Checked=value,AutoSize=true,Location=new Point(x,y)};Controls.Add(c);return c;}

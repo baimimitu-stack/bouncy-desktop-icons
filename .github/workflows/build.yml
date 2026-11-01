@@ -14,3 +14,4 @@ jobs:
           path: |
             dist/BouncyIcons-*.exe
             dist/assets/
+            dist/使用说明.txt
