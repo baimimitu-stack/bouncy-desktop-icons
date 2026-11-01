@@ -1,0 +1,16 @@
+dist/
+release/
+node_modules/
+*.log
+*.tmp
+settings.json
+entries.json
+custom.gif
+picture.png
+test-data*/
+electron-standard/config.json
+*.lnk
+prepare-electron.cjs
+electron-standard/src/vendor/
+electron-standard/
+.env*

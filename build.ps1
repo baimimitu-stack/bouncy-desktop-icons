@@ -1,0 +1,18 @@
+param([switch]$Test)
+$ErrorActionPreference='Stop'
+$root=$PSScriptRoot
+$csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+if(!(Test-Path -LiteralPath $csc)){throw '需要 Windows 自带的 .NET Framework 4.x 编译器。'}
+New-Item -ItemType Directory -Path (Join-Path $root 'dist\assets') -Force | Out-Null
+if($Test){
+  & $csc /nologo /target:exe "/out:$root\dist\CoreTests.exe" "$root\src\PetBrain.cs" "$root\tests\CoreTests.cs"
+  if($LASTEXITCODE -ne 0){throw '测试编译失败'}
+  & "$root\dist\CoreTests.exe"
+  if($LASTEXITCODE -ne 0){throw '算法测试失败'}
+}
+foreach($edition in @('Lite','Standard','Pro')){
+  & $csc /nologo /target:winexe /optimize+ "/out:$root\dist\BouncyIcons-$edition.exe" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll "$root\src\PetBrain.cs" "$root\src\PetApp.cs" "$root\src\LauncherManager.cs"
+  if($LASTEXITCODE -ne 0){throw "$edition 编译失败"}
+}
+Copy-Item -LiteralPath "$root\assets\folder.gif" -Destination "$root\dist\assets\folder.gif"
+Write-Output '构建完成：dist 中包含三个版本及共享 assets 文件夹。'
