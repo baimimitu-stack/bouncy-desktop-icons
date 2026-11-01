@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using BouncyIcons;
 class CoreTests {
@@ -26,6 +26,19 @@ class CoreTests {
         foods.Add(new Food("far","grass",new Vec(900,900),false));p=b.Position;b.Step(9000,foods,false,true);Check(p.Distance(b.Position)<=1.01,"suspend dt clamp");
         PetBrain a=new PetBrain(55,area,new Vec(-1000,0)),c=new PetBrain(55,area,new Vec(-1000,0));foods.Clear();
         for(int i=0;i<1000;i++){a.Step(.05,foods,false,false);c.Step(.05,foods,false,false);Check(a.Position.Distance(c.Position)<.00001,"deterministic replay");}
-        Console.WriteLine("PASS: 200000 bounded steps, needs, pause, food, sleep, tiny area, suspend, deterministic replay");
+        PetSocial social=new PetSocial(7),other=new PetSocial(9);
+        var moods=new HashSet<PetMood>();
+        for(int i=0;i<30;i++){social.Clear();social.Click();moods.Add(social.Mood);}
+        Check(moods.Count>=3,"varied click moods");social.Clear();
+        for(int i=0;i<4;i++)social.Click();Check(social.Mood==PetMood.Grumpy,"repeated clicks get grumpy");
+        Check(!social.Meet(other),"click cooldown");
+        for(int i=0;i<70;i++)social.Step(.1);
+        Check(social.Meet(other)&&other.Mood==PetMood.Grumpy,"grumpy encounter argument");
+        Check(!social.Meet(other),"encounter cooldown");
+        social.Step(9000);Check(!social.Ready,"suspend cannot skip cooldown");
+        for(int i=0;i<230;i++){social.Step(.1);other.Step(.1);}
+        Check(social.Mood==PetMood.Calm&&social.Ready&&other.Ready,"mood recovery");
+        Check(social.Meet(other),"encounter after cooldown");social.Clear();Check(social.Speech==""&&social.Mood==PetMood.Calm,"clear social");
+        Console.WriteLine("PASS: 200000 bounded steps, needs, pause, food, sleep, tiny area, suspend, deterministic replay; click moods, arguments, cooldown, recovery");
     }
 }

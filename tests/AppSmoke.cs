@@ -21,6 +21,7 @@ class AppSmoke {
             if(!f.Text.Contains("管理器"))throw new Exception("edition name missing");
             using(Bitmap bmp=new Bitmap(f.Width,f.Height)){f.DrawToBitmap(bmp,new Rectangle(0,0,bmp.Width,bmp.Height));bmp.Save(Path.Combine(args[0],"manager-preview.png"));}
         }}
+        TestInteractions(c,args[0]);
         Entry added=c.Entries[1];string realTarget=c.Pets[added.Id].Config.Target;c.Remove(added);
         if(c.Pets.Count!=1||!Directory.Exists(realTarget))throw new Exception("removing entry touched target");
         foreach(PetWindow w in c.Pets.Values){w.OpenSettings();}
@@ -36,7 +37,30 @@ class AppSmoke {
             if(Program.Edition!=mode||pet.Config.Target!=target||pet.Config.Gif!=image||pet.Config.Size!=size||c.Pets.Count!=1)throw new Exception("mode switch lost settings");
             if(pet.Moving!=(mode!="lite")||pet.Pro!=(mode=="pro"))throw new Exception("mode behavior");
         }
-        c.Shutdown();Program.Wake.Dispose();Console.WriteLine("PASS: edition names; embedded manual; actual double-click launch; single-click/drag do not launch; two targets; GIF; resize; drag persistence; range; safe removal; shutdown");
+        c.Shutdown();Program.Wake.Dispose();Console.WriteLine("PASS: single-click reaction; double-click and drag cancellation; social proximity, toggles, cooldown; edition names; embedded manual; actual double-click launch; single-click/drag do not launch; two targets; GIF; resize; drag persistence; range; safe removal; shutdown");
+    }
+    static void TestInteractions(LauncherContext c,string output){
+        c.SetMode("pro");PetWindow a=c.Pets[c.Entries[0].Id],b=c.Pets[c.Entries[1].Id];
+        a.Config.Roaming=b.Config.Roaming=false;a.ClearInteraction();b.ClearInteraction();
+        var up=typeof(PetWindow).GetMethod("Up",BindingFlags.Instance|BindingFlags.NonPublic);
+        Point pointer=new Point(a.Left+20,a.Top+20);
+        a.BeginDrag(pointer,new Point(20,20));up.Invoke(a,new object[]{null,new MouseEventArgs(MouseButtons.Left,1,20,20,0)});
+        int count=a.Social.ClickCount;a.ProcessPendingClick(0);if(a.Social.ClickCount!=count)throw new Exception("click not deferred");
+        a.ProcessPendingClick(double.MaxValue);if(a.Social.ClickCount!=count+1)throw new Exception("single click reaction");
+        a.ClearInteraction();a.BeginDrag(pointer,new Point(20,20));up.Invoke(a,new object[]{null,new MouseEventArgs(MouseButtons.Left,1,20,20,0)});
+        a.BeginDrag(pointer,new Point(20,20));if(!a.AcceptDoubleClick())throw new Exception("double click recognition");
+        a.ProcessPendingClick(double.MaxValue);if(a.Social.ClickCount!=count+1)throw new Exception("double click reacted");
+        a.BeginDrag(pointer,new Point(20,20));a.UpdateDrag(new Point(pointer.X+40,pointer.Y+40));up.Invoke(a,new object[]{null,new MouseEventArgs(MouseButtons.Left,1,60,60,0)});
+        a.ProcessPendingClick(double.MaxValue);if(a.Social.ClickCount!=count+1)throw new Exception("drag reacted");
+        a.ClearInteraction();b.ClearInteraction();b.Location=new Point(a.Left+500,a.Top);if(a.Meet(b))throw new Exception("distant encounter");
+        b.Location=new Point(a.Right+10,a.Top);b.Config.Social=false;if(a.Meet(b))throw new Exception("disabled social");b.Config.Social=true;
+        if(!a.Meet(b)||a.Social.Speech==""||b.Social.Speech=="")throw new Exception("nearby encounter");
+        if(a.Meet(b))throw new Exception("encounter spam");
+        var tick=typeof(PetWindow).GetMethod("Tick",BindingFlags.Instance|BindingFlags.NonPublic);tick.Invoke(a,new object[]{null,EventArgs.Empty});tick.Invoke(b,new object[]{null,EventArgs.Empty});
+        foreach(Form f in Application.OpenForms){if(f is SpeechWindow)using(Bitmap image=new Bitmap(f.Width,f.Height)){f.DrawToBitmap(image,new Rectangle(Point.Empty,image.Size));image.Save(Path.Combine(output,"speech-preview.png"));break;}}
+        c.SetMode("lite");if(a.Social.Speech!=""||a.Meet(b))throw new Exception("mode did not stop social");
+        c.SetMode("pro");a.Config.Interactions=false;a.BeginDrag(pointer,new Point(20,20));up.Invoke(a,new object[]{null,new MouseEventArgs(MouseButtons.Left,1,20,20,0)});a.ProcessPendingClick(double.MaxValue);
+        if(a.Social.ClickCount!=count+1)throw new Exception("disabled clicks");a.Config.Interactions=true;
     }
     static void TestMigration(string root){
         var json=new System.Web.Script.Serialization.JavaScriptSerializer();string id=new string('a',32);

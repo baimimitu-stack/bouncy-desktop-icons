@@ -34,10 +34,15 @@ namespace BouncyIcons {
             menu.Items.Add("找回全部挂件",null,(s,e)=>{foreach(PetWindow w in Pets.Values)w.Rescue();});
             menu.Items.Add("使用说明书",null,(s,e)=>Program.ShowManual());
             menu.Items.Add("退出所有挂件",null,(s,e)=>Shutdown());
-            tray=new NotifyIcon{Icon=SystemIcons.Application,Text="蹦蹦图标 · "+Program.EditionName,ContextMenuStrip=menu,Visible=true};
+            tray=new NotifyIcon{Icon=Program.AppIcon,Text="蹦蹦图标 · "+Program.EditionName,ContextMenuStrip=menu,Visible=true};
             tray.MouseClick+=(s,e)=>{if(e.Button==MouseButtons.Left)ShowManager();};
-            wakeTimer.Interval=500;wakeTimer.Tick+=(s,e)=>{if(Program.Wake.WaitOne(0))ShowManager();};wakeTimer.Start();
+            wakeTimer.Interval=500;wakeTimer.Tick+=(s,e)=>{if(Program.Wake.WaitOne(0))ShowManager();CheckMeetings();};wakeTimer.Start();
             if(first)ShowManager();
+        }
+        internal void CheckMeetings(){
+            if(Program.Edition!="pro")return;
+            var pets=Pets.Values.Where(p=>p.CanMeet).ToList();
+            for(int i=0;i<pets.Count;i++)for(int j=i+1;j<pets.Count;j++)if(pets[i].Meet(pets[j]))break;
         }
         public void SetMode(string mode){
             if(mode!="lite"&&mode!="standard"&&mode!="pro")throw new ArgumentException("mode");
@@ -61,7 +66,7 @@ namespace BouncyIcons {
         readonly ListView list=new ListView();
         readonly ComboBox modes=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Location=new Point(310,25),Width=180};
         readonly Label summary=new Label{Location=new Point(22,65),AutoSize=true};
-        public ManagerWindow(LauncherContext c){ctx=c;Text="蹦蹦图标管理器";ClientSize=new Size(700,460);StartPosition=FormStartPosition.CenterScreen;Font=new Font("Microsoft YaHei",10);BackColor=Color.FromArgb(248,244,236);AllowDrop=true;
+        public ManagerWindow(LauncherContext c){ctx=c;Text="蹦蹦图标管理器";Icon=Program.AppIcon;ClientSize=new Size(700,460);StartPosition=FormStartPosition.CenterScreen;Font=new Font("Microsoft YaHei",10);BackColor=Color.FromArgb(248,244,236);AllowDrop=true;
             Controls.Add(new Label{Text="蹦蹦图标管理器",Font=new Font(Font.FontFamily,17,FontStyle.Bold),Location=new Point(22,20),AutoSize=true});
             Controls.Add(summary);modes.Items.AddRange(new object[]{"简易","标准","进阶"});Controls.Add(modes);RefreshMode();modes.SelectedIndexChanged+=(s,e)=>ctx.SetMode(new[]{"lite","standard","pro"}[modes.SelectedIndex]);
             AddButton("使用说明书",536,20,()=>Program.ShowManual());
